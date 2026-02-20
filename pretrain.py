@@ -1,5 +1,6 @@
 import os
 import time
+import math
 import argparse
 import torch
 
@@ -21,7 +22,7 @@ parser.add_argument("--dtype", type=str, default="bfloat16", choices=["bfloat16"
 parser.add_argument("--num_workers", type=int, default=8, help="数据加载线程数")
 parser.add_argument("--accumulation_steps", type=int, default=8, help="梯度累积步数")
 parser.add_argument("--grad_clip", type=float, default=1.0, help="梯度裁剪阈值")
-parser.add_argument("--log_interval", type=int, default=100, help="日志打印间隔")
+parser.add_argument("--log_interval", type=int, default=1, help="日志打印间隔")
 parser.add_argument('--max_seq_len', default=340, type=int, help="训练的最大截断长度（中文1token≈1.5~1.7字符）")
 parser.add_argument("--data_path", type=str, default="./datasets/pretrain_hq.jsonl", help="预训练数据路径")
 parser.add_argument("--use_swanlab", action="store_true", default=True, help="是否使用swanlab（默认启用）")
@@ -74,23 +75,11 @@ if PretrainConfig.use_swanlab and accelerator.is_main_process:
 tokenizer = AutoTokenizer.from_pretrained(PretrainConfig.tokenizer_path)
 model = load_model()
 
-# 6. 初始化 optimizer 和 scheduler
+# 6. 初始化 optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
 
-# 计算总训练步数（用于 scheduler）
-pretrain_dataset = PretrainDataset(args.data_path, tokenizer, max_length=args.max_seq_len)
-steps_per_epoch = len(pretrain_dataset) // (args.batch_size * accelerator.num_processes)
-total_steps = steps_per_epoch * args.epochs
-
-warmup_steps = int(total_steps * 0.1)  # 10% warmup
-
-scheduler = get_cosine_schedule_with_warmup(
-    optimizer,
-    num_warmup_steps=warmup_steps,
-    num_training_steps=total_steps
-)
-
 # 7. 加载数据
+pretrain_dataset = PretrainDataset(args.data_path, tokenizer, max_length=args.max_seq_len)
 pretrain_loader = DataLoader(
     pretrain_dataset,
     batch_size=args.batch_size,
@@ -99,71 +88,83 @@ pretrain_loader = DataLoader(
     pin_memory=True
 )
 
-# 8. 准备模型、优化器、数据加载器、scheduler
-model, optimizer, pretrain_loader, scheduler = accelerator.prepare(
-    model, optimizer, pretrain_loader, scheduler
+# 8. 先 prepare dataloader，使多卡时 len 为每进程的迭代数，再计算 total_steps
+pretrain_loader = accelerator.prepare(pretrain_loader)
+len_dataloader = len(pretrain_loader)
+num_update_steps_per_epoch = math.ceil(len_dataloader / accelerator.gradient_accumulation_steps)
+total_steps = num_update_steps_per_epoch * args.epochs
+
+warmup_steps = int(total_steps * 0.1)  # 10% warmup
+scheduler = get_cosine_schedule_with_warmup(
+    optimizer,
+    num_warmup_steps=warmup_steps,
+    num_training_steps=total_steps
 )
 
-# 9. 训练循环
+# 9. 准备模型、优化器、scheduler（dataloader 已在上面 prepare）
+model, optimizer, scheduler = accelerator.prepare(model, optimizer, scheduler)
+
+# 10. 训练循环
 global_step = 0
+optimizer_step = 0
+last_log_optimizer_step = 0
 
 for epoch in range(args.epochs):
     model.train()
     epoch_start_time = time.time()
     
     for step, (input_ids, labels) in enumerate(pretrain_loader):
-        # 使用 accelerate.accumulate 进行梯度累积
+        global_step += 1
         with accelerator.accumulate(model):
             with accelerator.autocast():
                 res = model(input_ids, labels=labels)
                 loss = res.loss
-            
+
             accelerator.backward(loss)
-            
+
             # 梯度裁剪和优化器更新（只在累积完成后执行）
             if accelerator.sync_gradients:
                 accelerator.clip_grad_norm_(model.parameters(), args.grad_clip)
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
+                optimizer_step += 1
+
         
-        global_step += 1
-        
-        # 日志输出
-        if global_step % args.log_interval == 0:
-            current_lr = scheduler.get_last_lr()[0]
-            elapsed_time = time.time() - epoch_start_time
-            steps_per_sec = args.log_interval / elapsed_time if elapsed_time > 0 else 0
-            estimated_training_time = total_steps / steps_per_sec
-            log_msg = (
-                f"Epoch [{epoch+1}/{args.epochs}] | "
-                f"Step [{global_step}] | "
-                f"Loss: {loss.item():.4f} | "
-                f"LR: {current_lr:.2e} | "
-                f"Speed: {steps_per_sec:.2f} steps/s | "
-                f"Total steps: {total_steps} | "
-                f"Estimated training time: {estimated_training_time:.2f}s"
-            )
-            accelerator.print(log_msg)
-            
-            # swanlab 日志
-            if swanlab:
-                swanlab.log({
-                    "loss": loss.item(),
-                    "learning_rate": current_lr,
-                    "epoch": epoch + 1,
-                    "step": global_step
-                })
-            
-            epoch_start_time = time.time()  # 重置计时器
-        
-        # 保存 checkpoint
-        if global_step % PretrainConfig.save_interval == 0:
-            if accelerator.is_main_process:
-                # 保存完整 checkpoint（accelerate 会自动管理训练状态）
-                checkpoint_path = os.path.join(PretrainConfig.save_dir, f"{PretrainConfig.save_weight}_step{global_step}")
-                accelerator.save_state(checkpoint_path)
-                accelerator.print(f"Saved checkpoint to {checkpoint_path}")
+
+                # 日志输出（每 log_interval 次 optimizer 步打一次）
+                if optimizer_step > 0 and optimizer_step % args.log_interval == 0:
+                    current_lr = scheduler.get_last_lr()[0]
+                    elapsed_time = time.time() - epoch_start_time
+                    steps_per_sec = args.log_interval / elapsed_time if elapsed_time > 0 else 0
+                    remaining_steps = total_steps - optimizer_step
+                    estimated_remaining = remaining_steps / steps_per_sec if steps_per_sec > 0 else 0
+                    log_msg = (
+                        f"Epoch [{epoch+1}/{args.epochs}] | "
+                        f"Step [{optimizer_step}/{total_steps}] | "
+                        f"Loss: {loss.item():.4f} | "
+                        f"LR: {current_lr:.2e} | "
+                        f"Speed: {steps_per_sec:.2f} steps/s | "
+                        f"Estimated remaining: {estimated_remaining:.0f}s"
+                    )
+                    accelerator.print(log_msg)
+
+                    if swanlab:
+                        swanlab.log({
+                            "loss": loss.item(),
+                            "learning_rate": current_lr,
+                            "epoch": epoch + 1,
+                            "step": optimizer_step,
+                        })
+
+                    epoch_start_time = time.time()
+
+            # 保存 checkpoint（按 optimizer 步数间隔）
+            if optimizer_step > 0 and optimizer_step % PretrainConfig.save_interval == 0:
+                if accelerator.is_main_process:
+                    checkpoint_path = os.path.join(PretrainConfig.save_dir, f"{PretrainConfig.save_weight}_step{optimizer_step}")
+                    accelerator.save_state(checkpoint_path)
+                    accelerator.print(f"Saved checkpoint to {checkpoint_path}")
 
 # 11. 训练结束，保存最终模型
 if accelerator.is_main_process:
