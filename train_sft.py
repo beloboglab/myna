@@ -19,7 +19,7 @@ class TrainConfig:
     # training
     dtype: str = "bf16" # Choose between ['no', 'fp8', 'fp16', 'bf16']
     learning_rate: float = 1e-6
-    batch_size: int = 16
+    batch_size: int = 64
     accumulation_steps: int = 1
     grad_clip: float = 1.0
     epochs: int = 2
@@ -27,12 +27,12 @@ class TrainConfig:
     # logging
     use_swanlab: bool = True
     swanlab_project: str = "Myna-SFT"
-    log_interval: int = 100
+    log_interval: int = 200
 
     # save
     save_dir: str = "/root/autodl-tmp/myna/checkpoints"
     save_weight: str = "full_sft"
-    save_interval: int = 50
+    save_interval: int = 50000
     tokenizer_path: str = "./final/myna_25M"
     model_path: str = "./final/myna_25M"
 
