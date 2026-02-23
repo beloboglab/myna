@@ -1,6 +1,6 @@
 from transformers import Qwen3Config, Qwen3ForCausalLM
-def load_model(training_type: str = "pretrain"):
-    if training_type == "pretrain":
+def load_model(model_path: str = None, model_format: str = "hf"):
+    if model_path is None:
         config = Qwen3Config(
             vocab_size=6400,           # 词表大小，可改成你自己的
             hidden_size=512,             # 隐藏维度
@@ -18,11 +18,12 @@ def load_model(training_type: str = "pretrain"):
         )
     
         model = Qwen3ForCausalLM(config)
-    elif training_type == "sft":
-        # load from pretrain weight
-        model = Qwen3ForCausalLM.from_pretrained(f"./final/myna_25M")
-
-    print(training_type)
+    else:
+        if model_format == "hf":
+            model = Qwen3ForCausalLM.from_pretrained(model_path)
+        else:
+            raise ValueError(f"Unsupported model format: {model_format}")
+    print(model_path)
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"总参数量: {total_params:,} ({total_params / 1e6:.2f}M)")
@@ -30,4 +31,4 @@ def load_model(training_type: str = "pretrain"):
     return model
 
 if __name__ == "__main__":
-    load_model(training_type="sft")
+    load_model(model_path="./final/myna_25M")

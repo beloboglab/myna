@@ -30,7 +30,7 @@ class PretrainConfig:
     log_interval: int = 1
 
     # save
-    save_dir: str = "/root/autodl-tmp/myna/checkpoints"
+    save_dir: str = "/root/autodl-tmp/myna/checkpoints/pretrain"
     save_weight: str = "pretrain"
     save_interval: int = 5000
     tokenizer_path: str = "./final/myna_25M"

@@ -38,7 +38,32 @@
     "trim_offsets": true,
     "use_regex": true
   },
-  "post_processor": null,
+  "post_processor": {
+    "type": "TemplateProcessing",
+    "single": [
+      {
+        "Sequence": {
+          "id": "A",
+          "type_id": 0
+        }
+      }
+    ],
+    "pair": [
+      {
+        "Sequence": {
+          "id": "A",
+          "type_id": 0
+        }
+      },
+      {
+        "Sequence": {
+          "id": "B",
+          "type_id": 1
+        }
+      }
+    ],
+    "special_tokens": {}
+  },
   "decoder": {
     "type": "ByteLevel",
     "add_prefix_space": true,
