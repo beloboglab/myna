@@ -44,7 +44,7 @@ class TrainConfig:
     # training
     dtype: str = "bf16" # Choose between ['no', 'fp8', 'fp16', 'bf16']
     learning_rate: float = 4e-8
-    batch_size: int = 4
+    batch_size: int = 32
     accumulation_steps: int = 1
     grad_clip: float = 1.0
     epochs: int = 1
@@ -60,7 +60,7 @@ class TrainConfig:
     # logging
     use_swanlab: bool = True
     swanlab_project: str = "Myna-DPO"
-    log_interval: int = 200
+    log_interval: int = 10
 
     # save
     save_dir: str = "/root/autodl-tmp/myna/dpo/checkpoints"
