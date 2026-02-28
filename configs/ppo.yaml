@@ -12,23 +12,23 @@ vf_coef: 0.5
 kl_coef: 0.02
 max_gen_len: 1536
 update_old_actor_freq: 4
-reasoning: 0  # 0=normal, 1=reasoning model
+reasoning: 1  # 0=normal, 1=reasoning model
 
 # model
-base_model_path: "./final/sft/myna_25M"
+base_model_path: "./final/myna_25M_reason"
 reward_model_path: "/root/autodl-tmp/Skywork/Skywork-Reward-V2-Qwen3-1.7B"
 
 # logging
 use_swanlab: True
-swanlab_project: "Myna-PPO"
+swanlab_project: "Myna-PPO-2"
 log_interval: 10
 
 # save
 save_dir: "/root/autodl-tmp/myna/ppo/checkpoints"
 save_weight: "ppo_actor"
 save_interval: 1000
-tokenizer_path: "./final/ppo/myna_25M"
-model_path: "./final/ppo/myna_25M"
+tokenizer_path: "./final/myna_25M_ppo"
+model_path: "./final/myna_25M_ppo"
 
 # data
 data_path: "./datasets/rlaif-mini.jsonl"

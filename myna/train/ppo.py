@@ -174,7 +174,7 @@ ref_model.eval().requires_grad_(False)
 critic_model = CriticModel.from_pretrained(train_config.base_model_path)
 
 reward_model = AutoModelForSequenceClassification.from_pretrained(
-    train_config.reward_model_path, torch_dtype=torch.bfloat16, num_labels=1
+    train_config.reward_model_path, dtype=torch.bfloat16, num_labels=1
 )
 reward_model.eval().requires_grad_(False)
 reward_tokenizer = AutoTokenizer.from_pretrained(train_config.reward_model_path)

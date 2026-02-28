@@ -1,7 +1,7 @@
 dtype: "bf16"
-learning_rate: 4e-8
+learning_rate: 2e-8
 batch_size: 32
-accumulation_steps: 1
+accumulation_steps: 4
 grad_clip: 1.0
 epochs: 2
 

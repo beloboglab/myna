@@ -122,7 +122,8 @@ special_ids = start_of_think_ids + end_of_think_ids + start_of_answer_ids + end_
 special_ids_tensor = torch.tensor(special_ids, device=accelerator.device)
 
 # 10. 训练循环
-for epoch in range(start_epoch, train_config.epochs):
+optimizer_step = 0
+for epoch in range(train_config.epochs):
     model.train()
     epoch_start_time = time.time()
 

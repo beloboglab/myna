@@ -8,9 +8,9 @@
 import os
 from pathlib import Path
 
-MODEL_DIR = "final/myna_25M_sft"
+MODEL_DIR = "final/myna_25M_reason"
 # 目标 HF 仓库 ID，例如 "your_username/myna_25M"
-REPO_ID = os.environ.get("HF_REPO_ID", "beloboglab/myna_25M_sft")
+REPO_ID = os.environ.get("HF_REPO_ID", "beloboglab/myna_25M_reason")
 
 
 def main():
