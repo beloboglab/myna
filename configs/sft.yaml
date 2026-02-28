@@ -3,7 +3,7 @@ learning_rate: 1e-6
 batch_size: 64
 accumulation_steps: 1
 grad_clip: 1.0
-epochs: 3
+epochs: 2
 
 # model
 base_model_path: "final/myna_25M_pretrain"
