@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 """
-将 myna/final/myna_25M 推送到 Hugging Face Hub。
-使用前请：pip install huggingface_hub
-
 认证（任选其一）：
   - 推荐：hf auth login  
   - 或设置环境变量 HF_TOKEN
@@ -11,10 +8,9 @@
 import os
 from pathlib import Path
 
-# 本地模型目录（相对项目根）
-MODEL_DIR = "/Volumes/My PSSD/projs/final/myna_25M"
+MODEL_DIR = "final/myna_25M_pretrain"
 # 目标 HF 仓库 ID，例如 "your_username/myna_25M"
-REPO_ID = os.environ.get("HF_REPO_ID", "beloboglab/myna_25M")
+REPO_ID = os.environ.get("HF_REPO_ID", "beloboglab/myna_25M_pretrain")
 
 
 def main():

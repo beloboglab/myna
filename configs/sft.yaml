@@ -9,12 +9,12 @@ epochs: 3
 base_model_path: "final/myna_25M_pretrain"
 
 # logging
-use_swanlab: False
-swanlab_project: "Myna-SFT"
-log_interval: 10
+use_swanlab: True
+swanlab_project: "Myna-SFT-2"
+log_interval: 100
 
 # save
-save_dir: "/root/autodl-tmp/myna/checkpoints"
+save_dir: "/root/autodl-tmp/myna/sft/checkpoints"
 save_weight: "full_sft"
 save_interval: 50000
 tokenizer_path: "final/myna_25M_sft"
@@ -22,5 +22,5 @@ model_path: "final/myna_25M_sft"
 
 # data
 data_path: "./datasets/sft_mini_512.jsonl"
-max_seq_len: 340
+max_seq_len: 512
 num_workers: 8

@@ -1,3 +1,6 @@
+# Copy from MiniMind (https://github.com/jingyaogong/minimind).
+# See MiniMind's LICENSE for license terms.
+
 import os
 import time
 import argparse

@@ -1,3 +1,5 @@
+# Copy from MiniMind (https://github.com/jingyaogong/minimind).
+# See MiniMind's LICENSE for license terms.
 from torch.utils.data import Dataset
 import torch
 import os
