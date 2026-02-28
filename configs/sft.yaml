@@ -1,0 +1,26 @@
+dtype: "bf16"
+learning_rate: 1e-6
+batch_size: 64
+accumulation_steps: 1
+grad_clip: 1.0
+epochs: 3
+
+# model
+base_model_path: "final/myna_25M_pretrain"
+
+# logging
+use_swanlab: False
+swanlab_project: "Myna-SFT"
+log_interval: 10
+
+# save
+save_dir: "/root/autodl-tmp/myna/checkpoints"
+save_weight: "full_sft"
+save_interval: 50000
+tokenizer_path: "final/myna_25M_sft"
+model_path: "final/myna_25M_sft"
+
+# data
+data_path: "./datasets/sft_mini_512.jsonl"
+max_seq_len: 340
+num_workers: 8

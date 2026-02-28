@@ -1,0 +1,36 @@
+dtype: "bf16"
+learning_rate: 8e-8
+critic_learning_rate: 8e-8
+batch_size: 2
+accumulation_steps: 1
+grad_clip: 1.0
+epochs: 1
+
+# ppo
+clip_epsilon: 0.1
+vf_coef: 0.5
+kl_coef: 0.02
+max_gen_len: 1536
+update_old_actor_freq: 4
+reasoning: 0  # 0=normal, 1=reasoning model
+
+# model
+base_model_path: "./final/sft/myna_25M"
+reward_model_path: "/root/autodl-tmp/Skywork/Skywork-Reward-V2-Qwen3-1.7B"
+
+# logging
+use_swanlab: True
+swanlab_project: "Myna-PPO"
+log_interval: 10
+
+# save
+save_dir: "/root/autodl-tmp/myna/ppo/checkpoints"
+save_weight: "ppo_actor"
+save_interval: 1000
+tokenizer_path: "./final/ppo/myna_25M"
+model_path: "./final/ppo/myna_25M"
+
+# data
+data_path: "./datasets/rlaif-mini.jsonl"
+max_seq_len: 66
+num_workers: 8

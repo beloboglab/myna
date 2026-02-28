@@ -1,0 +1,28 @@
+dtype: "bf16"
+learning_rate: 1e-6
+batch_size: 8
+accumulation_steps: 1
+grad_clip: 1.0
+epochs: 1
+
+# logging
+use_swanlab: True
+swanlab_project: "Myna-Reasoning"
+log_interval: 100
+
+# save
+save_dir: "/root/autodl-tmp/myna/checkpoints"
+save_weight: "reason"
+save_interval: 50000
+tokenizer_path: "./final/myna_25M"
+model_path: "./final/myna_25M"
+from_weight: "dpo"  # 基于哪个权重训练，如 dpo / full_sft
+from_resume: False  # 是否从 resume checkpoint 续训
+
+# data
+data_path: "./datasets/r1_mix_1024.jsonl"
+max_seq_len: 720
+num_workers: 8
+
+# 推理蒸馏：特殊 token 上的 loss 权重
+special_token_loss_weight: 10.0

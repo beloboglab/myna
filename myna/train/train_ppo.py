@@ -2,17 +2,24 @@ import os
 import re
 import time
 import math
+import argparse
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from dataclasses import dataclass, asdict
+from pydantic import BaseModel
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Qwen3ForCausalLM, get_cosine_schedule_with_warmup
 from torch.utils.data import DataLoader
+from myna.common.config import load_config
 from myna.lm_dataset import RLAIFDataset
 from myna.model import load_model
+
+# 读取命令行参数
+parser = argparse.ArgumentParser(description="Myna PPO")
+parser.add_argument("--config_path", type=str, default="configs/ppo.yaml", help="YAML config path")
+args = parser.parse_args()
 
 
 class CriticModel(Qwen3ForCausalLM):
@@ -91,8 +98,7 @@ def calculate_rewards(prompts, responses, reward_model, reward_tokenizer, device
     return rewards
 
 
-@dataclass
-class TrainConfig:
+class TrainConfig(BaseModel):
     # training
     dtype: str = "bf16"
     learning_rate: float = 8e-8
@@ -117,12 +123,12 @@ class TrainConfig:
     # logging
     use_swanlab: bool = True
     swanlab_project: str = "Myna-PPO"
-    log_interval: int = 1
+    log_interval: int = 10
 
     # save
     save_dir: str = "/root/autodl-tmp/myna/ppo/checkpoints"
     save_weight: str = "ppo_actor"
-    save_interval: int = 10
+    save_interval: int = 1000
     tokenizer_path: str = "./final/ppo/myna_25M"
     model_path: str = "./final/ppo/myna_25M"
 
@@ -132,62 +138,64 @@ class TrainConfig:
     num_workers: int = 8
 
 
+train_config = TrainConfig(**load_config(args.config_path))
+
 set_seed(42)
 
 accelerator = Accelerator(
-    mixed_precision=TrainConfig.dtype,
-    gradient_accumulation_steps=TrainConfig.accumulation_steps
+    mixed_precision=train_config.dtype,
+    gradient_accumulation_steps=train_config.accumulation_steps
 )
 
 swanlab = None
-if TrainConfig.use_swanlab and accelerator.is_main_process:
+if train_config.use_swanlab and accelerator.is_main_process:
     try:
         import swanlab
         swanlab.init(
-            project=TrainConfig.swanlab_project,
-            experiment_name=f"{TrainConfig.save_weight}_epochs{TrainConfig.epochs}_bs{TrainConfig.batch_size}_lr{TrainConfig.learning_rate}",
-            config=asdict(TrainConfig())
+            project=train_config.swanlab_project,
+            experiment_name=f"{train_config.save_weight}_epochs{train_config.epochs}_bs{train_config.batch_size}_lr{train_config.learning_rate}",
+            config=train_config.model_dump()
         )
     except ImportError:
         accelerator.print("Warning: swanlab not installed, skipping swanlab logging")
         swanlab = None
 
 # ==================== Load models ====================
-tokenizer = AutoTokenizer.from_pretrained(TrainConfig.base_model_path)
+tokenizer = AutoTokenizer.from_pretrained(train_config.base_model_path)
 
-actor_model = load_model(model_path=TrainConfig.base_model_path)
+actor_model = load_model(model_path=train_config.base_model_path)
 
-old_actor_model = load_model(model_path=TrainConfig.base_model_path)
+old_actor_model = load_model(model_path=train_config.base_model_path)
 old_actor_model.eval().requires_grad_(False)
 
-ref_model = load_model(model_path=TrainConfig.base_model_path)
+ref_model = load_model(model_path=train_config.base_model_path)
 ref_model.eval().requires_grad_(False)
 
-critic_model = CriticModel.from_pretrained(TrainConfig.base_model_path)
+critic_model = CriticModel.from_pretrained(train_config.base_model_path)
 
 reward_model = AutoModelForSequenceClassification.from_pretrained(
-    TrainConfig.reward_model_path, torch_dtype=torch.bfloat16, num_labels=1
+    train_config.reward_model_path, torch_dtype=torch.bfloat16, num_labels=1
 )
 reward_model.eval().requires_grad_(False)
-reward_tokenizer = AutoTokenizer.from_pretrained(TrainConfig.reward_model_path)
+reward_tokenizer = AutoTokenizer.from_pretrained(train_config.reward_model_path)
 
 # ==================== Optimizers & data ====================
-actor_optimizer = torch.optim.AdamW(actor_model.parameters(), lr=TrainConfig.learning_rate)
-critic_optimizer = torch.optim.AdamW(critic_model.parameters(), lr=TrainConfig.critic_learning_rate)
+actor_optimizer = torch.optim.AdamW(actor_model.parameters(), lr=train_config.learning_rate)
+critic_optimizer = torch.optim.AdamW(critic_model.parameters(), lr=train_config.critic_learning_rate)
 
-train_dataset = RLAIFDataset(TrainConfig.data_path, tokenizer, max_length=(TrainConfig.max_seq_len + TrainConfig.max_gen_len))
+train_dataset = RLAIFDataset(train_config.data_path, tokenizer, max_length=(train_config.max_seq_len + train_config.max_gen_len))
 train_loader = DataLoader(
     train_dataset,
-    batch_size=TrainConfig.batch_size,
+    batch_size=train_config.batch_size,
     shuffle=True,
-    num_workers=TrainConfig.num_workers,
+    num_workers=train_config.num_workers,
     pin_memory=True
 )
 
 train_loader = accelerator.prepare(train_loader)
 len_dataloader = len(train_loader)
 num_update_steps_per_epoch = math.ceil(len_dataloader / accelerator.gradient_accumulation_steps)
-total_steps = num_update_steps_per_epoch * TrainConfig.epochs
+total_steps = num_update_steps_per_epoch * train_config.epochs
 
 warmup_steps = int(total_steps * 0.1)
 actor_scheduler = get_cosine_schedule_with_warmup(
@@ -208,7 +216,7 @@ reward_model = reward_model.to(accelerator.device)
 # ==================== Training ====================
 optimizer_step = 0
 
-for epoch in range(TrainConfig.epochs):
+for epoch in range(train_config.epochs):
     actor_model.train()
     critic_model.train()
     epoch_start_time = time.time()
@@ -217,7 +225,7 @@ for epoch in range(TrainConfig.epochs):
         prompts = batch["prompt"]
         enc = tokenizer(
             prompts, return_tensors="pt", padding=True, truncation=True,
-            max_length=TrainConfig.max_seq_len, padding_side="left"
+            max_length=train_config.max_seq_len, padding_side="left"
         ).to(accelerator.device)
         prompt_length = enc.input_ids.shape[1]
 
@@ -225,7 +233,7 @@ for epoch in range(TrainConfig.epochs):
             model_for_gen = accelerator.unwrap_model(actor_model)
             gen_out = model_for_gen.generate(
                 input_ids=enc.input_ids, attention_mask=enc.attention_mask,
-                max_new_tokens=TrainConfig.max_gen_len, do_sample=True, temperature=0.8,
+                max_new_tokens=train_config.max_gen_len, do_sample=True, temperature=0.8,
                 pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id
             )
 
@@ -235,7 +243,7 @@ for epoch in range(TrainConfig.epochs):
         ]
         rewards = calculate_rewards(
             prompts, responses_text, reward_model, reward_tokenizer,
-            accelerator.device, TrainConfig.reasoning
+            accelerator.device, train_config.reasoning
         )
 
         full_mask = (gen_out != tokenizer.pad_token_id).long()
@@ -274,16 +282,16 @@ for epoch in range(TrainConfig.epochs):
             kl_ref = (actor_logp - ref_logp).mean()
             ratio = torch.exp(actor_logp - old_logp)
             surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1.0 - TrainConfig.clip_epsilon, 1.0 + TrainConfig.clip_epsilon) * advantages
+            surr2 = torch.clamp(ratio, 1.0 - train_config.clip_epsilon, 1.0 + train_config.clip_epsilon) * advantages
             policy_loss = -torch.min(surr1, surr2).mean()
             value_loss = F.mse_loss(values, rewards)
-            loss = policy_loss + TrainConfig.vf_coef * value_loss + TrainConfig.kl_coef * kl_ref
+            loss = policy_loss + train_config.vf_coef * value_loss + train_config.kl_coef * kl_ref
 
             accelerator.backward(loss)
 
             if accelerator.sync_gradients:
-                accelerator.clip_grad_norm_(actor_model.parameters(), TrainConfig.grad_clip)
-                accelerator.clip_grad_norm_(critic_model.parameters(), TrainConfig.grad_clip)
+                accelerator.clip_grad_norm_(actor_model.parameters(), train_config.grad_clip)
+                accelerator.clip_grad_norm_(critic_model.parameters(), train_config.grad_clip)
                 actor_optimizer.step()
                 critic_optimizer.step()
                 actor_scheduler.step()
@@ -293,7 +301,7 @@ for epoch in range(TrainConfig.epochs):
                 optimizer_step += 1
 
                 # Logging
-                if optimizer_step % TrainConfig.log_interval == 0:
+                if optimizer_step % train_config.log_interval == 0:
                     response_ids = gen_out[:, prompt_length:]
                     is_eos = (response_ids == tokenizer.eos_token_id)
                     eos_indices = torch.argmax(is_eos.int(), dim=1)
@@ -305,11 +313,11 @@ for epoch in range(TrainConfig.epochs):
                     actor_lr = actor_scheduler.get_last_lr()[0]
                     critic_lr = critic_scheduler.get_last_lr()[0]
                     elapsed = time.time() - epoch_start_time
-                    steps_per_sec = TrainConfig.log_interval / elapsed if elapsed > 0 else 0
+                    steps_per_sec = train_config.log_interval / elapsed if elapsed > 0 else 0
                     remaining = (total_steps - optimizer_step) / steps_per_sec if steps_per_sec > 0 else 0
 
                     accelerator.print(
-                        f"Epoch [{epoch+1}/{TrainConfig.epochs}] | Step [{optimizer_step}/{total_steps}] | "
+                        f"Epoch [{epoch+1}/{train_config.epochs}] | Step [{optimizer_step}/{total_steps}] | "
                         f"Policy Loss: {policy_loss.item():.4f} | Value Loss: {value_loss.item():.4f} | "
                         f"Reward: {rewards.mean().item():.4f} | KL: {kl.item():.4f} | KL_ref: {kl_ref.item():.4f} | "
                         f"Avg Resp Len: {avg_len:.1f} | Actor LR: {actor_lr:.2e} | "
@@ -331,14 +339,14 @@ for epoch in range(TrainConfig.epochs):
                     epoch_start_time = time.time()
 
                 # Sync old actor with current actor
-                if optimizer_step % TrainConfig.update_old_actor_freq == 0:
+                if optimizer_step % train_config.update_old_actor_freq == 0:
                     raw_actor = accelerator.unwrap_model(actor_model)
                     old_actor_model.load_state_dict(raw_actor.state_dict())
 
                 # Save checkpoint
-                if optimizer_step % TrainConfig.save_interval == 0:
+                if optimizer_step % train_config.save_interval == 0:
                     if accelerator.is_main_process:
-                        checkpoint_path = os.path.join(TrainConfig.save_dir, f"{TrainConfig.save_weight}_step{optimizer_step}")
+                        checkpoint_path = os.path.join(train_config.save_dir, f"{train_config.save_weight}_step{optimizer_step}")
                         accelerator.save_state(checkpoint_path)
                         accelerator.print(f"Saved checkpoint to {checkpoint_path}")
 
@@ -350,9 +358,9 @@ for epoch in range(TrainConfig.epochs):
 # Save final model
 if accelerator.is_main_process:
     unwrapped_model = accelerator.unwrap_model(actor_model)
-    unwrapped_model.save_pretrained(TrainConfig.model_path)
-    tokenizer.save_pretrained(TrainConfig.model_path)
-    accelerator.print(f"Training completed! Final model saved to {TrainConfig.model_path}")
+    unwrapped_model.save_pretrained(train_config.model_path)
+    tokenizer.save_pretrained(train_config.model_path)
+    accelerator.print(f"Training completed! Final model saved to {train_config.model_path}")
 
 if swanlab:
     swanlab.finish()

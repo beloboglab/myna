@@ -215,3 +215,4 @@ __marimo__/
 *.hdf5
 # Keep model files locally but don't commit to Git
 # final/myna_25M/model.safetensors
+final/

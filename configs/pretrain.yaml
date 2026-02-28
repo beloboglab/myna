@@ -1,0 +1,26 @@
+dtype: "bf16"
+learning_rate: 5e-4
+batch_size: 64
+accumulation_steps: 8
+grad_clip: 1.0
+epochs: 2
+
+# model
+base_tokenizer_path: "final/tokenizer"
+
+# logging
+use_swanlab: True
+swanlab_project: "Myna-Pretrain-2"
+log_interval: 10
+
+# save
+save_dir: "/root/autodl-tmp/myna/checkpoints/pretrain"
+save_weight: "pretrain"
+save_interval: 50000
+tokenizer_path: "final/myna_25M_pretrain"
+model_path: "final/myna_25M_pretrain"
+
+# data
+data_path: "./datasets/pretrain_hq.jsonl"
+max_seq_len: 340
+num_workers: 8
