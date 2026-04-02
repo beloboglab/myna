@@ -7,6 +7,17 @@ epochs: 2
 
 # model
 base_model_path: "final/myna_25M_pretrain"
+ 
+# LoRA/QLoRA
+lora: null            # null | "train" | "path/to/adapter"
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules: ["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]
+use_qlora: false
+load_in_4bit: true
+bnb_4bit_compute_dtype: "bfloat16"  # or "float16"
+bnb_4bit_quant_type: "nf4"          # or "fp4"
 
 # logging
 use_swanlab: True

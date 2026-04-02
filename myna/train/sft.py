@@ -29,6 +29,16 @@ class TrainConfig(BaseModel):
     epochs: int = 2
     # model
     base_model_path: str = "final/myna_25M_pretrain"
+    # LoRA/QLoRA
+    lora: str | bool | None = None          # None / "train" / "path/to/adapter"
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    target_modules: list[str] = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    use_qlora: bool = False
+    load_in_4bit: bool = True
+    bnb_4bit_compute_dtype: str = "bfloat16"
+    bnb_4bit_quant_type: str = "nf4"
 
     # logging
     use_swanlab: bool = True
@@ -76,7 +86,18 @@ if train_config.use_swanlab and accelerator.is_main_process:
 
 # 5. 加载 tokenizer 和 model
 tokenizer = AutoTokenizer.from_pretrained(train_config.base_model_path)
-model = load_model(model_path=train_config.base_model_path)
+model = load_model(
+    model_path=train_config.base_model_path,
+    lora=train_config.lora,
+    lora_r=train_config.lora_r,
+    lora_alpha=train_config.lora_alpha,
+    lora_dropout=train_config.lora_dropout,
+    target_modules=tuple(train_config.target_modules) if train_config.target_modules else None,
+    use_qlora=train_config.use_qlora,
+    load_in_4bit=train_config.load_in_4bit,
+    bnb_4bit_compute_dtype=train_config.bnb_4bit_compute_dtype,
+    bnb_4bit_quant_type=train_config.bnb_4bit_quant_type,
+)
 
 # 6. 初始化 optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=train_config.learning_rate)

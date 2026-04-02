@@ -5,3 +5,5 @@ accelerate>=0.24.0
 sentencepiece>=0.1.99
 protobuf>=3.20.0
 swanlab
+peft>=0.11.0
+bitsandbytes>=0.43.0
